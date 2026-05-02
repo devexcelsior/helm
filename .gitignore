@@ -1,0 +1,8 @@
+# Local agent artifacts
+.pi/
+logs/
+*.log
+
+# Plan documents (used by implementing agents, not the methodology)
+SETUP.md
+plan.md
