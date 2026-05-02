@@ -4,5 +4,5 @@ logs/
 *.log
 
 # Plan documents (used by implementing agents, not the methodology)
-SETUP.md
-plan.md
+/SETUP.md
+/plan.md

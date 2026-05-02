@@ -11,7 +11,7 @@ What helm ships next, and why.
 | What | Status | Evidence |
 |---|---|---|
 | `AGENTS.md` — doctrine and workflow specification | ✅ Done | |
-| `prompts/` — 14 phase prompt templates | ✅ Done | |
+| `prompts/` — 13 phase prompt templates | ✅ Done | |
 | `LICENSE` — MIT | ✅ Done | |
 | `README.md` — methodology overview for platform leadership | ✅ Done | `b432975` |
 | `.gitignore` — local artifact hygiene | ✅ Done | `0ff325c` |
