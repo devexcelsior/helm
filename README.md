@@ -14,17 +14,14 @@ helm is a multi-pass coding methodology that guides AI coding agents through a d
 → /distill → /calibrate → /finalize
 ```
 
-## How it differs from Superpowers
+## Features
 
-| | Superpowers | helm |
-|---|---|---|
-| **Critique** | Single-pass review | Perspective rotation — senior eng → PM → security/perf. Near-zero overlap between passes. |
-| **Cross-model** | None | Second model as independent critic. Different training data, different failure modes. |
-| **Verification** | "Check if it's fixed" | 7 ordered gates including mechanical bash checks that can't be talked around. |
-| **Constraints** | Model self-polices | Mechanical grep/awk one-liners with exit codes. Model can't override. |
-| **Memory** | Nothing durable | ADR distillation with supersession tracking. Institutional memory in files. |
-| **Calibration** | None | Per-feature calibration loop. Findings classified into portable/model-specific/harness-specific buckets. |
-| **Foundation** | Trust the platform | MPL-2.0 harness — can't be removed. Build whatever you want on top. |
+- **Perspective-rotation critique** — senior engineer, product manager, and security/perf reviewers rotate on every plan. Same model, different role. Near-zero overlap between passes.
+- **Cross-model critique** — a second model (different training data, different failure modes) reviews independently when available.
+- **Mechanical verification** — bash one-liners with exit codes. grep, awk, ripgrep. The model can't talk around a failing check.
+- **7-gate verification** — ordered: mechanical checks → constraint gate → invariant gate → build/test/lint → acceptance criteria. Fail-closed.
+- **ADR distillation** — every shipped feature leaves a decision record with supersession tracking. Institutional memory lives in files, not model weights.
+- **Calibration buckets** — per-feature findings classified as portable, model-specific, or harness-specific. Improves the methodology itself, not just the code.
 
 ## Contents
 
