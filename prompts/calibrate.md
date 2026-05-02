@@ -137,7 +137,7 @@ For every finding produced from per-phase scoring AND from the trace file's clas
 |---|---|---|
 | **portable** | Applies regardless of model/harness; survives K2.6 → K2.7 and pi 0.70 → pi 0.71 | Evidence-over-claims, perspective rotation, response-table revision, mechanical verification with self-validation, generalized deferred-decision scan |
 | **model-specific** | Tied to current model behavior | Chunk cap of 15-20, thinking-level guidance, K2.6's silent-improvement tendency, K2.6's OR-clause exploitation pattern |
-| **harness-specific** | Tied to pi version or workflow tooling | `enable_thinking` bug on Fireworks GLM, `/reload` cache friction, gawk `\b` interpretation, prompt template format |
+| **harness-specific** | Tied to pi version or workflow tooling | `enable_thinking` bug on a model provider, `/reload` cache friction, gawk `\b` interpretation, prompt template format |
 
 Trace file findings tagged `[?]` must be resolved into one of the three buckets before the calibration doc ships. If a finding genuinely fits multiple buckets, pick the dominant one and note the other in parentheses.
 

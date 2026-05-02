@@ -7,17 +7,16 @@ set -euo pipefail
 # Options:
 #   --hitl                  Pause for user approval at 3 checkpoints
 #   --log-dir <path>        Directory for per-phase logs (default: logs/<slug>/)
-#   --model <pattern>       Default model (default: env PI_ORCHESTRATE_MODEL or
-#                           accounts/fireworks/models/kimi-k2p6)
-#   --critique-model <pat>  Model for critique passes (default: env
-#                           PI_ORCHESTRATE_CRITIQUE_MODEL or same as --model)
+#   --model <pattern>       Default model (required; overrides PI_ORCHESTRATE_MODEL)
+#   --critique-model <pat>  Model for critique passes (default: PI_ORCHESTRATE_CRITIQUE_MODEL
+#                           or same as --model)
 #
 # Default: full automation; halts only on errors.
 # Thinking levels per phase are set from the doctrine (coding-agent-workflow.md).
 
 HITL=false
 LOG_DIR=""
-MODEL="${PI_ORCHESTRATE_MODEL:-accounts/fireworks/models/kimi-k2p6}"
+MODEL="${PI_ORCHESTRATE_MODEL:-}"
 CRITIQUE_MODEL="${PI_ORCHESTRATE_CRITIQUE_MODEL:-}"
 SLUG=""
 TOPIC=""
@@ -92,6 +91,12 @@ fi
 # critique model fallback
 if [[ -z "$CRITIQUE_MODEL" ]]; then
   CRITIQUE_MODEL="$MODEL"
+fi
+
+# model is required — set via PI_ORCHESTRATE_MODEL env or --model flag
+if [[ -z "$MODEL" ]]; then
+  echo "MODEL not set. Export PI_ORCHESTRATE_MODEL or pass --model." >&2
+  exit 1
 fi
 
 # --- paths ---
