@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# pi-orchestrate — drive a feature through the full pi workflow pipeline
+# Usage: pi-orchestrate [options] <slug> "<topic>"
+#
+# Options:
+#   --hitl                  Pause for user approval at 3 checkpoints
+#   --log-dir <path>        Directory for per-phase logs (default: logs/<slug>/)
+#   --model <pattern>       Default model (default: env PI_ORCHESTRATE_MODEL or
+#                           accounts/fireworks/models/kimi-k2p6)
+#   --critique-model <pat>  Model for critique passes (default: env
+#                           PI_ORCHESTRATE_CRITIQUE_MODEL or same as --model)
+#
+# Default: full automation; halts only on errors.
+# Thinking levels per phase are set from the doctrine (coding-agent-workflow.md).
+
+HITL=false
+LOG_DIR=""
+MODEL="${PI_ORCHESTRATE_MODEL:-accounts/fireworks/models/kimi-k2p6}"
+CRITIQUE_MODEL="${PI_ORCHESTRATE_CRITIQUE_MODEL:-}"
+SLUG=""
+TOPIC=""
+
+# --- thinking level per phase (doctrine §1–§7) ---
+declare -A THINKING=(
+  [plan]=medium
+  [critique-pm]=high
+  [critique-se]=high
+  [revise]=high
+  [decompose]=medium
+  [preflight]=minimal
+  [implement]=medium
+  [verify]=minimal
+  [assess]=medium
+  [distill]=high
+  [finalize]=medium
+)
+
+# --- argument parsing ---
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --hitl)
+      HITL=true
+      shift
+      ;;
+    --log-dir)
+      LOG_DIR="$2"
+      shift 2
+      ;;
+    --model)
+      MODEL="$2"
+      shift 2
+      ;;
+    --critique-model)
+      CRITIQUE_MODEL="$2"
+      shift 2
+      ;;
+    --help|-h)
+      sed -n '/^# pi-orchestrate/,/^# Default/p' "$0" | sed 's/^# //'
+      exit 0
+      ;;
+    --*)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+    *)
+      if [[ -z "$SLUG" ]]; then
+        SLUG="$1"
+      elif [[ -z "$TOPIC" ]]; then
+        TOPIC="$1"
+      else
+        echo "Unexpected argument: $1" >&2
+        exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$SLUG" || -z "$TOPIC" ]]; then
+  sed -n '/^# pi-orchestrate/,/^# Default/p' "$0" | sed 's/^# //' >&2
+  exit 1
+fi
+
+# slug validation
+if [[ ! "$SLUG" =~ ^[a-z][a-z0-9-]*$ ]]; then
+  echo "Invalid slug: $SLUG (must match ^[a-z][a-z0-9-]*$)" >&2
+  exit 1
+fi
+
+# critique model fallback
+if [[ -z "$CRITIQUE_MODEL" ]]; then
+  CRITIQUE_MODEL="$MODEL"
+fi
+
+# --- paths ---
+ORIG_REPO="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [[ -z "$ORIG_REPO" ]]; then
+  echo "Not inside a git repo. cd to your repo first." >&2
+  exit 1
+fi
+
+REPO_NAME="$(basename "$ORIG_REPO")"
+REPO_PARENT="$(dirname "$ORIG_REPO")"
+WORKTREE_PATH="$REPO_PARENT/${REPO_NAME}-$SLUG"
+
+if [[ -z "$LOG_DIR" ]]; then
+  LOG_DIR="$ORIG_REPO/logs/$SLUG"
+fi
+mkdir -p "$LOG_DIR"
+
+# --- helpers ---
+hitl_pause() {
+  if $HITL; then
+    echo ""
+    read -rp "[HITL] $1 Continue? [Y/n] " ans
+    if [[ "$ans" =~ ^[Nn]$ ]]; then
+      echo "Paused. Resume from worktree: cd $WORKTREE_PATH" >&2
+      exit 0
+    fi
+  fi
+}
+
+run_phase() {
+  local phase="$1"
+  local prompt="$2"   # just the prompt text, e.g. "/plan foo 'bar'"
+  local logfile="$LOG_DIR/${phase}.log"
+  local think="${THINKING[$phase]}"
+  local mdl="$MODEL"
+
+  # critique phases use the critique model
+  if [[ "$phase" == critique-* ]]; then
+    mdl="$CRITIQUE_MODEL"
+  fi
+
+  echo "=== Phase: $phase (model: $mdl, thinking: $think) ==="
+
+  # build the full pi command with model + thinking flags
+  local full_cmd
+  full_cmd="pi --model $mdl --thinking $think -p \"$prompt\""
+
+  if ! eval "$full_cmd" > "$logfile" 2>&1; then
+    echo "FAIL: $phase (exit $?)" >&2
+    echo "Log: $logfile" >&2
+    exit 1
+  fi
+
+  echo "PASS: $phase (log: $logfile)"
+}
+
+# --- Phase 1: /plan (from original repo) ---
+cd "$ORIG_REPO"
+run_phase "plan" "/plan $SLUG '$TOPIC'"
+
+# Verify worktree was created
+if [[ ! -d "$WORKTREE_PATH" ]]; then
+  echo "FAIL: worktree not created at $WORKTREE_PATH" >&2
+  exit 1
+fi
+
+hitl_pause "Review plan at $WORKTREE_PATH/docs/roadmap/$SLUG/$SLUG.md"
+
+# --- Phases 2–3: critiques (from worktree) ---
+cd "$WORKTREE_PATH"
+run_phase "critique-pm" "/critique pm-requirements"
+run_phase "critique-se" "/critique senior-engineer-risk"
+
+# --- Phase 4: /revise ---
+run_phase "revise" "/revise"
+
+hitl_pause "Review revised plan + response table."
+
+# --- Phase 5: /decompose ---
+run_phase "decompose" "/decompose"
+
+# Verify step docs exist
+if [[ ! -f "docs/roadmap/$SLUG/_consistency.md" ]]; then
+  echo "FAIL: _consistency.md missing" >&2
+  exit 1
+fi
+
+# --- Phase 6: /preflight ---
+run_phase "preflight" "/preflight"
+
+# --- Phase 7: /implement ---
+run_phase "implement" "/implement"
+
+# --- Phase 8: /verify ---
+run_phase "verify" "/verify"
+
+# --- Phase 9: /assess ---
+run_phase "assess" "/assess"
+
+# --- Phase 10: /distill ---
+run_phase "distill" "/distill"
+
+# Verify ADR exists (discover most recent)
+ADR_FILE="$(ls -t docs/adr/*.md 2>/dev/null | head -1)"
+if [[ -z "$ADR_FILE" ]]; then
+  echo "FAIL: no ADR created after /distill" >&2
+  exit 1
+fi
+
+hitl_pause "Review code before finalize. ADR: $ADR_FILE"
+
+# --- Phase 11: /finalize ---
+# The /finalize template resolves WORKTREE_PATH from $(pwd). It must run
+# from inside the worktree. After removal our CWD becomes dangling, but
+# absolute-path references below are safe.
+run_phase "finalize" "/finalize"
+
+# Verify worktree was removed
+if [[ -d "$WORKTREE_PATH" ]]; then
+  echo "FAIL: worktree still exists at $WORKTREE_PATH" >&2
+  exit 1
+fi
+
+# --- summary ---
+echo ""
+echo "✅ Feature $SLUG shipped."
+echo "Model: $MODEL (critique: $CRITIQUE_MODEL)"
+echo "Logs: $LOG_DIR/"
+echo "ADR:  $ADR_FILE"
+echo ""
+echo "Optional: git -C $ORIG_REPO push origin main"
