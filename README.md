@@ -4,113 +4,72 @@ How to sail. A rigorous methodology for coding agents.
 
 ---
 
-## The problem
+## Architecture
 
-Coding agents are fast. They're also confidently wrong — regularly. Standard review catches some of their errors but the model is better at arguing *past* a reviewer than any junior engineer you've ever managed. The best engineers cope by stopping the agent every few tool calls to re-read its output — which defeats the speed gain.
+```
+helm (MIT)         ← this repo — methodology, prompts, orchestration
+hull (MIT)         ← TUI, web UI, plugins, CLI
+keel (MPL-2.0)     ← agent engine + LLM API
+```
 
-The core risk isn't that agents write bad code. It's that they produce **plausible-looking code that passes the obvious checks** and then silently fails on edge cases, state management, or cross-cutting concerns that no single reviewer is looking for.
+helm is the methodology layer. It specifies how coding agents plan, critique, implement, verify, and learn. Runs on any harness that reads files and writes code. The reference implementation is [keel](https://github.com/devexcelsior/keel) + [hull](https://github.com/devexcelsior/hull).
 
 ---
 
-## What helm is
+## The problem
 
-A governance methodology that wraps the coding agent. The agent produces code; helm critiques, decomposes, verifies, and distills. It's the layer between model output and production merge — harness-agnostic, evidence-gated, and self-improving.
+Coding agents produce plausible-looking code that passes obvious checks and fails on edge cases, state management, or cross-cutting concerns no single reviewer catches. The model argues past reviewers better than any junior engineer. Stopping the agent to re-read output defeats the speed gain.
 
-```
-/plan → /critique (PM) → /critique (senior eng) → /revise
-→ /decompose → /preflight → /implement → /verify → /assess
-→ /distill → /calibrate → /finalize
-```
+---
 
-A reference implementation exists: `pi-orchestrate` — a single bash command that drives all 11 phases with correct model assignment, thinking-level settings per phase, optional human-in-the-loop checkpoints, and structured per-phase logging. The methodology is a spec; the script is one harness that implements it.
+## Four things that make it different
 
-Four things make it different:
+### Perspective-rotation critique
 
-### 1. Perspective-rotation critique — same model, different role
+Every plan gets two independent reviews from different perspectives (PM requirements, senior-engineer risk). Same model, different role. Empirically: near-zero overlap between passes.
 
-Every plan gets critiqued from two rotating perspectives (PM requirements coverage, senior-engineer risk/edge cases). Same model each time, different role. Empirically, this produces **near-zero overlap** between passes — the model's attention shifts to different failure surfaces with each role prompt, surfacing gaps a single-pass review would miss.
+### Cross-model critique
 
-### 2. Cross-model critique — independent critic, always available
+A second model with different training data reviews the same plan. Different model, different blind spots. What one misses, the other catches.
 
-A second model with different training data reviews the same plan. Different model, different blind spots, different failure modes. Two models see different slices of the same problem space — what one misses, the other catches.
+### Mechanical gates
 
-### 3. Mechanical gates — the model can't override
+Verification runs as a 7-gate pipeline: mechanical checks (bash one-liners with exit codes) → constraint gate → invariant gate → build/test/lint → acceptance criteria → output persistence → assess gate. Fail-closed. A non-zero exit blocks everything.
 
-Verification runs as a 7-gate ordered pipeline: mechanical checks (bash one-liners with exit codes) → constraint gate → invariant gate → build/test/lint → acceptance criteria → output persistence → assess gate. Fail-closed — a single non-zero exit blocks the entire verification, regardless of what the model claims.
+Mechanical checks are the binding answer. Models exploit OR clauses in constraints — a rule saying "wrap in try/catch *or* guard in callers" passes model review with neither satisfied. grep doesn't have loopholes.
 
-The mechanical checks are the binding answer. No model-based judgment can override a grep that returns non-zero. This matters because models reliably exploit OR clauses in constraint language: a constraint that says "wrap in try/catch *or* guard in callers" will pass model review with neither branch actually satisfied — the model finds the loophole, reasons compliance from it, and moves on. Mechanical checks don't have loopholes.
+### Institutional memory
 
-### 4. Institutional memory that compounds
-
-Every shipped feature produces:
-- An **ADR** (architecture decision record) with decision drivers, alternatives rejected with reasons, and measurable validation signals
-- A **calibration trace** classifying findings into three buckets: portable (applies regardless of model/harness), model-specific (tied to current model behavior), harness-specific (tied to current tooling version)
-
-When you swap models or harnesses, the portable findings survive. The model-specific ones are flagged for re-validation. This prevents overfitting to any one model version and makes the methodology measurably better with each feature that ships.
+Every feature produces an ADR with decision drivers and validation signals, plus a calibration trace classifying findings as portable, model-specific, or harness-specific. When you swap models, portable findings survive. Model-specific ones flag for re-validation. The methodology gets better with each feature.
 
 ---
 
 ## Evidence
 
-These claims are backed by observed feature runs. Not speculation.
-
-| Claim | Evidence |
+| Claim | Source |
 |---|---|
-| Perspective rotation produces zero-overlap findings | `dark-mode-toggle`: senior-engineer pass caught Vite CSS injection ordering, `setItem` error handling, `matchMedia` cleanup, step-ordering inversion. PM pass caught UI specification gaps, accessibility requirements, cross-tab sync scope, browser/OS matrix. **10 findings, zero overlap across two passes.** |
-| Cross-model catches unique gaps | `posts-tags-filter`: DeepSeek V4 Pro Think High as cross-model critic produced **3 unique catches** that K2.6 perspective rotation alone did not surface (junction-key delimiter ambiguity, OR-clause in constraint language, RouteErrorBoundary technical inaccuracy). |
-| Model-based verification rubber-stamps OR clauses | `dark-mode-toggle` Step 2: a try/catch constraint with an "or in callers" escape hatch was rubber-stamped by 5 independent review layers (`/critique`, `/decompose` consistency sweep, `/implement` constraint contract, `/verify` constraint gate, and the engineer's own read-through). All five found the loophole and reasoned compliance — none caught that neither branch was actually satisfied. Mechanical checks surfaced it immediately. |
-| K2.6 thinking mode sustains non-trivial chunks | `dark-mode-toggle`: sustained 39 tool calls (Step 6 across preflight+implement+verify) and 50+ tool calls (Step 4) without repeating work, inventing APIs, or refactoring earlier code. Drift threshold is empirically higher than what chunk-size caps assume. |
+| Perspective rotation: zero overlap | `dark-mode-toggle`: 10 findings across two passes, zero overlap |
+| Cross-model: unique catches | `posts-tags-filter`: 3 unique catches K2.6 perspective rotation missed |
+| OR-clause exploitation caught | `dark-mode-toggle` Step 2: 5 review layers rubber-stamped a constraint neither branch satisfied. Mechanical check caught it. |
+| Sustained agent performance | `dark-mode-toggle`: 39 tool calls (Step 6), 50+ (Step 4) — no drift, no invented APIs |
 
 ---
 
-## Where it fits
+## Reference implementation
 
-helm is not a tool. It's a **process specification** — a set of phase contracts, prompt templates, and verification rules that any coding-agent harness can implement. It sits between the model and the repo:
-
-```
-Model output → [helm verification layer] → production merge
-                   ↑
-              Evidence artifacts
-           (ADRs, calibration traces)
-```
-
-It does not replace CI/CD, code review, or existing QA gates. It adds a **pre-merge governance check** specifically designed for the failure modes of LLM-generated code: confident hallucination, constraint-exploitation, silent drift, and compounding errors across tool calls.
+[`pi-orchestrate`](bin/pi-orchestrate) drives the full pipeline — `--model` for primary, `--critique-model` for second, `--hitl` for human-in-the-loop, structured per-phase logging. A single bash command.
 
 ---
 
 ## What it doesn't solve
 
-A methodology is honest about its limits.
-
-| Risk | How helm handles it | What escapes |
+| Risk | Mitigation | What escapes |
 |---|---|---|
-| Novel failure modes the model hasn't seen before | Cannot catch categorically. Mitigated by cross-model critique (different training data, lower chance of shared blind spot). | A genuinely new class of LLM error will pass until the methodology is updated to detect it. |
-| Compounding errors across phases | Per-phase evidence requirements + cross-step consistency contract catch contradictions between artifacts. | Sequential phases that all share the same underlying assumption (and no phase challenges it) will propagate the error. |
-| Model-swap disruption | Calibration buckets classify findings by portability. Portable findings survive swaps; model-specific ones are flagged for re-validation. | A model with fundamentally different failure modes (e.g., self-hosted fine-tune vs. API) requires new calibration data. No prior artifact can predict this. |
-| Token cost bloat | Multiple critique passes + cross-model add cost. Mitigation: prompt caching achieves ~83% input discount on stable prefix. | Total cost per feature is higher than single-pass agent usage. The trade is defect prevention vs. compute spend. |
-| Setup friction | Requires seeding `AGENTS.md` + prompt templates + initial calibration. One-time cost per project. | New project ramp is manual. No one-click setup yet. |
-
----
-
-## Why not just use `.cursorrules`?
-
-`.cursorrules`, Copilot instructions, and Claude Code custom instructions are **prompt engineering**. They tell the model what to care about. They don't verify that the model actually did it.
-
-helm adds verification — mechanical checks the model can't argue past, a consistency contract across step docs, and institutional memory that persists after the conversation window closes. The prompt rules are the *intent*. The methodology is the *enforcement*.
-
----
-
-## Usage
-
-Harness-agnostic. Works with any coding agent that reads files and writes code.
-
-**Reference implementation:** [`pi-orchestrate`](bin/pi-orchestrate) drives the full pipeline — `--model` for primary, `--critique-model` for second model, `--hitl` for human-in-the-loop gates, structured per-phase logging.
-
-**Other harnesses:**
-
-- [keel](https://github.com/devexcelsior/keel) + [hull](https://github.com/devexcelsior/hull) — the open pi stack
-- Claude Code, Codex, Cursor, Copilot
-- Your own — the prompts are markdown, the checks are bash
+| Novel failure modes | Cross-model critique (different training data) | Truly new error classes pass until detected |
+| Compounding phase errors | Cross-step consistency contract | Shared assumptions propagate if unchallenged |
+| Model-swap disruption | Calibration buckets survive portable findings | New models need new calibration data |
+| Token cost | Prompt caching for input discount | Higher total cost than single-pass usage |
+| Setup friction | One-time seed per project | No one-click setup yet |
 
 ---
 
